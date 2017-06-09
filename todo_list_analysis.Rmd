@@ -1,0 +1,104 @@
+---
+title: "To Do List Analysis"
+author: "Katharine Egan"
+date: "June 9, 2017"
+output: html_document
+---
+
+Reading in the data via google docs:
+```{r}
+# load libraries
+library(tidyverse)
+library(googlesheets)
+
+# list all google spreadsheets ever created or shared from your email 
+# listed in a data frame format
+# this will prompt you to sign into your email and give googlesheets
+# access to all your spreadsheets
+my_sheets <- gs_ls()
+
+# choose a google spreadsheet to read into R 
+# can read it into R by the key, title, url, etc. 
+# this function reads it by the title 
+raw_todo <- gs_title("Personal To Do List")
+
+# now convert the google spreadsheet to a usable data frame to work with
+# it will automatically read the first sheet in the workbook
+todo <- gs_read_csv(raw_todo)
+```
+
+Clean data:
+```{r}
+# remove some columns 
+todo[,c("X5", "Notes")] <- list(NULL)
+
+# rename column 
+colnames(todo)[colnames(todo)=="Date Completed"] <- "date_completed" 
+
+# count the number of rows that have NAs in the date_completed column
+sum(is.na(todo$date_completed)) # 67
+
+# break up dates, get rid of NAs in date column, and convert month to text
+todo <- todo %>%
+  filter(!is.na(date_completed)) %>% 
+  separate(date_completed, into = c("month", "day", "year"), sep="/") %>% 
+  mutate(month = as.numeric(month),
+         month_text = month.abb[month])
+```
+
+Grouping to do task by the type:
+```{r}
+# summariz the data by type
+todo_type <- todo %>% group_by(Type) %>% 
+  summarise(type_total = length(Type))
+
+# bar graph of type
+ggplot(data=todo_type,
+       aes(y=type_total, x=Type, fill = Type)) +
+  geom_bar(stat="identity", width = 0.5) +
+  scale_fill_grey() +
+  coord_flip() +
+  labs(y = "Number of Tasks") +
+  geom_text(aes(label=type_total), hjust = -0.09, size = 4.0) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,155)) +
+  theme_classic() +
+  theme(legend.position="none", 
+        text = element_text(size=14),
+        axis.title.y = element_blank())
+
+# save 
+ggsave("todo_type.png", width = 5, height = 4)
+```
+
+Number of tasks completed each month:
+```{r}
+# summarize the data by month 
+todo_month <- todo %>% group_by(month, month_text, year) %>% 
+  summarise(month_total = length(month))
+
+# create a line graph tracking number of tasks completed over time 
+ggplot(data=todo_month, aes(x=reorder(month_text,month), 
+                            y=month_total, group=1)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(.~year) +
+  theme_bw() +
+  labs(x = "Month", y = "Number of Tasks Completed") +
+  theme(axis.text.x = element_text(angle=50, hjust=1),
+        text = element_text(size=12))
+
+# save
+ggsave("todo_month.png", width = 5, height = 3)
+```
+
+Verbs used more than 10 times:
+```{r}
+# summarize by counting action verbs and choosing the ones used more than 10 times
+todo_verbs <- todo %>%
+  mutate(Task = tolower(Task),
+         action_verbs = gsub("([A-Za-z]+).*", "\\1", Task)) %>% 
+  group_by(action_verbs) %>%
+  summarize(verb_count = length(action_verbs)) %>% 
+  filter(verb_count > 10) 
+```
+
